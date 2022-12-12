@@ -127,6 +127,14 @@ found:
     return 0;
   }
 
+    // An empty read-only page USYSCALL to share data with kernel
+    // initialize usyscall with pid
+    if ((p->usyscall = (struct usyscall *)kalloc()) == 0) {
+        freeproc(p);
+        release(&p->lock);
+        return 0;
+    }
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -140,6 +148,8 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+
+  p->usyscall->pid = p->pid;
 
   return p;
 }
@@ -164,6 +174,9 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  if (p->usyscall)
+      kfree((void*)p->usyscall);
+  p->usyscall = 0;
 }
 
 // Create a user page table for a given process,
@@ -196,6 +209,13 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
+  // map the usyscall just below TRAPFRAME
+  if (mappages(pagetable, USYSCALL, PGSIZE,
+               (uint64)(p->usyscall), PTE_U | PTE_R) < 0) {
+      uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+      uvmunmap(pagetable, TRAPFRAME, 1, 0);
+      uvmfree(pagetable, 0);
+  }
   return pagetable;
 }
 
@@ -206,6 +226,7 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  uvmunmap(pagetable, USYSCALL, 1, 0);
   uvmfree(pagetable, sz);
 }
 
@@ -654,3 +675,27 @@ procdump(void)
     printf("\n");
   }
 }
+
+#ifdef LAB_PGTBL
+unsigned int
+pgaccess(pagetable_t pagetable, uint64 va, int pageNum)
+{
+    pte_t *pte;
+    unsigned int bits = 0;
+    uint64 tempVa;
+
+    tempVa = va;
+
+    for(int i = 0; i < pageNum; i++){
+        pte = walk(pagetable, tempVa, 0);
+        if(*pte & PTE_A){
+            bits |= (1 << i);
+            // clear PTE_A
+            *pte &= ~(PTE_A);
+        }
+        tempVa += PGSIZE;
+        pte = 0;
+    }
+    return bits;
+}
+#endif

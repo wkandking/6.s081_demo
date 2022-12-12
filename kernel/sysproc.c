@@ -81,6 +81,21 @@ int
 sys_pgaccess(void)
 {
   // lab pgtbl: your code here.
+  uint64 va;
+  int pageNum;
+  uint64 ua;
+  unsigned int bits;
+
+  if(argaddr(0, &va) < 0)
+      return -1;
+  if(argint(1, &pageNum) < 0)
+      return -1;
+  if(argaddr(2, &ua) < 0)
+      return -1;
+  bits = pgaccess(myproc()->pagetable, va, pageNum);
+  if(copyout(myproc()->pagetable, ua, (char *)&bits, sizeof(unsigned int)) < 0)
+      return -1;
+
   return 0;
 }
 #endif
